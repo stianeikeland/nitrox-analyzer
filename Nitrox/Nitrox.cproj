@@ -111,12 +111,6 @@
     <Compile Include="lcd.c">
       <SubType>compile</SubType>
     </Compile>
-    <Compile Include="libraries\adc\adc.c">
-      <SubType>compile</SubType>
-    </Compile>
-    <Compile Include="libraries\adc\adc.h">
-      <SubType>compile</SubType>
-    </Compile>
     <Compile Include="libraries\glcd\controllers\NT75451.c">
       <SubType>compile</SubType>
     </Compile>
@@ -237,7 +231,6 @@
   </ItemGroup>
   <ItemGroup>
     <Folder Include="libraries" />
-    <Folder Include="libraries\adc\" />
     <Folder Include="libraries\glcd\" />
     <Folder Include="libraries\glcd\controllers\" />
     <Folder Include="libraries\glcd\devices\" />

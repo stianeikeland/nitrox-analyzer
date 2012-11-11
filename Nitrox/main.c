@@ -6,7 +6,6 @@
 #define __DELAY_BACKWARD_COMPATIBLE__
 #include <util/delay.h>
 
-#include "libraries/adc/adc.h"
 #include "lcd.h"
 
 #define BUTTON_PORT       PORTD
@@ -19,17 +18,24 @@
 #define BUTTON_LONG       150 // *10 ms
 
 volatile unsigned long timer = 0;
-double oxygen = 0;
-int max_oxygen_value = 605;
 
 volatile unsigned int button_holdtime = 0;
 volatile int button_down = 0;
+
+volatile double adc_filtered_result = 0;
+double adc_air_level = 100;
 
 volatile enum {
 	NO,
 	SHORT,
 	LONG
 } button_pushed;
+
+enum {
+	CALIBRATION,
+	ANALYZING,
+	ANALYZING_HOLD
+} program_state = ANALYZING;
 
 // 1 ms resolution timer and button debounce / hold
 ISR(TIMER1_COMPA_vect)
@@ -68,6 +74,14 @@ ISR(INT3_vect)
 	EIMSK ^= (1 << BUTTON_INT);
 }
 
+ISR(ADC_vect)
+{
+	// Read out ADC result
+	unsigned long result = ADCL;
+	result += (ADCH << 8);
+	adc_filtered_result = ((double)result * 0.001) + (adc_filtered_result * 0.999);
+}
+
 // Set up a 1 ms timer1.
 void timer1_init()
 {
@@ -92,46 +106,75 @@ void button_init()
 	EIMSK |= (1 << BUTTON_INT);
 }
 
-double sample_adc(int tries)
+void adc_init()
 {
-	long sample = 0;
-	int i;
-	for (i=0; i<tries; i++)
-		sample += readADC_buzywait(1,7);
-	return (double)sample / tries;
+	// Slowest ADC Prescaler
+	ADCSRA |= (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
+	// Set ADC reference to AVCC, and channel to 1
+	ADMUX |= (1 << REFS0) | (1 << MUX0);
+	// Free running mode, enable adc, enable interrupt, go!
+	ADCSRA |= (1 << ADATE) | (1 << ADEN) | (1 << ADIE) | (1 << ADSC);
 }
 
-void read_oxygen() 
+double get_oxygen_level(double air_level, double adc_level)
 {
-	double new_oxygen = sample_adc(10) * 100 / (double)max_oxygen_value;
-	oxygen = new_oxygen * 0.10 + oxygen * 0.90;
-} 
+	// 20.9% oxygen = adc_air_level
+	double slope = air_level / 20.9;
+	return (slope > 0) ? (adc_level / slope) : 0;
+}
+
+void enable_button_interrupt()
+{
+	EIMSK |= (1 << BUTTON_INT);
+	button_pushed = NO;
+}
 
 int main(void)
 {
 	timer1_init();
 	lcd_init();
 	button_init();
+	adc_init();
 
 	// Enable interrupts:
 	sei();
 
 	double schedule_draw = 0;
-	double schedule_read = 0;
+	double oxygen = 0;
 
 	while (1) {
-		if (timer >= schedule_read) {
-			read_oxygen();
-			schedule_read = timer + 10;
+		
+		switch (program_state) {
+			
+			case ANALYZING:
+				oxygen = get_oxygen_level(adc_air_level, adc_filtered_result);
+			
+			case ANALYZING_HOLD:
+				lcd_display_oxygen(oxygen, (program_state == ANALYZING_HOLD));
+				
+				if (button_pushed == SHORT)
+					program_state = (program_state == ANALYZING) ? ANALYZING_HOLD : ANALYZING;
+				
+				if (button_pushed == LONG)
+					program_state = CALIBRATION;
+				
+				if (button_pushed)
+					enable_button_interrupt();
+					
+				break;
+			
+			case CALIBRATION:
+				lcd_display_calibration(adc_filtered_result);
+				
+				if (button_pushed == LONG) {
+					program_state = ANALYZING;
+					adc_air_level = adc_filtered_result;
+				}
+				
+				if (button_pushed)
+					enable_button_interrupt();
+				
+				break;
 		}
-		if (timer >= schedule_draw) {
-			lcd_display_oxygen(oxygen);
-			schedule_draw = timer + 150;
-		}
-		/*if (button_pushed) {
-			lcd_display_oxygen((button_pushed == LONG) ? 99 : 50);
-			button_pushed = NO;
-			EIMSK |= (1 << BUTTON_INT);
-		}*/
 	}
 }
