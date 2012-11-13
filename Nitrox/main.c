@@ -44,38 +44,6 @@ enum {
 	ANALYZING_HOLD
 } program_state = ANALYZING;
 
-// 1 ms resolution timer and button debounce / hold
-ISR(TIMER1_COMPA_vect)
-{
-	timer++;
-
-	if (timer % 1000 == 0)
-		idle_time++;
-
-	if (button_down && (timer % 10 == 0)) {
-		// read button status
-		if (BUTTON_READ_VAL) {
-			// Button was released
-			if (button_holdtime > BUTTON_SHORT) {
-				// This was a short push, short push triggered
-				button_pushed = SHORT;
-			} else {
-				// Really short push, enable interrupt again..
-				EIMSK |= (1 << BUTTON_INT);
-			}
-			button_down = 0;
-		} else {
-			// Button is still held
-			button_holdtime++;
-			if (button_holdtime > BUTTON_LONG) {
-				// Button was held really long, long push trigged
-				button_pushed = LONG;
-				button_down = 0;
-			}
-		}
-	}
-}
-
 ISR(INT3_vect)
 {
 	button_down = 1;
@@ -90,6 +58,43 @@ ISR(ADC_vect)
 	unsigned long result = ADCL;
 	result += (ADCH << 8);
 	adc_filtered_result = ((double)result * 0.001) + (adc_filtered_result * 0.999);
+}
+
+// 1 ms resolution timer and button debounce / hold
+ISR(TIMER1_COMPA_vect)
+{
+	timer++;
+
+	if (timer % 1000 == 0)
+		idle_time++;
+
+	if (button_down && (timer % 10 == 0))
+		handle_button_release();
+}
+
+inline void handle_button_release()
+{	
+	if (BUTTON_READ_VAL) {
+		
+		// Button was released, enable interrupt again if it was shorter
+		// than threshold for short push.
+		if (button_holdtime > BUTTON_SHORT)
+			button_pushed = SHORT;
+		else
+			EIMSK |= (1 << BUTTON_INT);
+		
+		button_down = 0;
+		
+	} else {
+		// Button is still held
+		button_holdtime++;
+		
+		if (button_holdtime > BUTTON_LONG) {
+			// Button was held really long, long push trigged
+			button_pushed = LONG;
+			button_down = 0;
+		}
+	}
 }
 
 // Set up a 1 ms timer1.
@@ -149,6 +154,48 @@ void enable_button_interrupt()
 	idle_time = 0;
 }
 
+void loop()
+{
+	double oxygen = 0;
+	
+	// Cut power if idle threshold reached
+	if (idle_time > MAX_IDLE_TIME)
+		POWER_ON_PORT &= ~(1 << POWER_ON_PIN);
+
+	switch (program_state) {
+
+		case ANALYZING:
+			oxygen = get_oxygen_level(adc_air_level, adc_filtered_result);
+
+		case ANALYZING_HOLD:
+			lcd_display_oxygen(oxygen, (program_state == ANALYZING_HOLD));
+		
+			if (button_pushed == SHORT)
+				program_state = (program_state == ANALYZING) ? ANALYZING_HOLD : ANALYZING;
+			
+			if (button_pushed == LONG)
+				program_state = CALIBRATION;
+			
+			if (button_pushed)
+				enable_button_interrupt();
+			
+			break;
+		
+		case CALIBRATION:
+			lcd_display_calibration(adc_filtered_result);
+		
+			if (button_pushed == LONG) {
+				program_state = ANALYZING;
+				adc_air_level = adc_filtered_result;
+			}
+		
+			if (button_pushed)
+				enable_button_interrupt();
+
+			break;
+	}
+}
+
 int main(void)
 {
 	power_on();
@@ -160,46 +207,6 @@ int main(void)
 	// Enable interrupts:
 	sei();
 
-	double schedule_draw = 0;
-	double oxygen = 0;
-
-	while (1) {
-		
-		// Cut power if idle threshold reached
-		if (idle_time > MAX_IDLE_TIME)
-			POWER_ON_PORT &= ~(1 << POWER_ON_PIN);
-
-		switch (program_state) {
-
-			case ANALYZING:
-				oxygen = get_oxygen_level(adc_air_level, adc_filtered_result);
-
-			case ANALYZING_HOLD:
-				lcd_display_oxygen(oxygen, (program_state == ANALYZING_HOLD));
-				
-				if (button_pushed == SHORT)
-					program_state = (program_state == ANALYZING) ? ANALYZING_HOLD : ANALYZING;
-				
-				if (button_pushed == LONG)
-					program_state = CALIBRATION;
-				
-				if (button_pushed)
-					enable_button_interrupt();
-					
-				break;
-			
-			case CALIBRATION:
-				lcd_display_calibration(adc_filtered_result);
-				
-				if (button_pushed == LONG) {
-					program_state = ANALYZING;
-					adc_air_level = adc_filtered_result;
-				}
-				
-				if (button_pushed)
-					enable_button_interrupt();
-
-				break;
-		}
-	}
+	while (1)
+		loop();
 }
