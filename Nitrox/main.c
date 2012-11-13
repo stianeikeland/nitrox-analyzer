@@ -31,6 +31,7 @@ volatile int button_down = 0;
 
 volatile double adc_filtered_result = 0;
 double adc_air_level = 100;
+double oxygen = 0;
 
 volatile enum {
 	NO,
@@ -155,9 +156,7 @@ void enable_button_interrupt()
 }
 
 void loop()
-{
-	double oxygen = 0;
-	
+{	
 	// Cut power if idle threshold reached
 	if (idle_time > MAX_IDLE_TIME)
 		POWER_ON_PORT &= ~(1 << POWER_ON_PIN);
