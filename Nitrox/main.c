@@ -17,7 +17,14 @@
 #define BUTTON_SHORT      10 // *10 ms
 #define BUTTON_LONG       150 // *10 ms
 
+#define POWER_ON_PIN      PC0
+#define POWER_ON_PORT     PORTC
+#define POWER_ON_DDR      DDRC
+
+#define MAX_IDLE_TIME     300 // in sec
+
 volatile unsigned long timer = 0;
+volatile unsigned long idle_time = 0;
 
 volatile unsigned int button_holdtime = 0;
 volatile int button_down = 0;
@@ -41,6 +48,9 @@ enum {
 ISR(TIMER1_COMPA_vect)
 {
 	timer++;
+
+	if (timer % 1000 == 0)
+		idle_time++;
 
 	if (button_down && (timer % 10 == 0)) {
 		// read button status
@@ -106,6 +116,13 @@ void button_init()
 	EIMSK |= (1 << BUTTON_INT);
 }
 
+void power_on()
+{
+	// Power control pin high.
+	POWER_ON_DDR |= (1 << POWER_ON_PIN);
+	POWER_ON_PORT |= (1 << POWER_ON_PIN);
+}
+
 void adc_init()
 {
 	// Slowest ADC Prescaler
@@ -127,10 +144,14 @@ void enable_button_interrupt()
 {
 	EIMSK |= (1 << BUTTON_INT);
 	button_pushed = NO;
+
+	// Reset idle timer
+	idle_time = 0;
 }
 
 int main(void)
 {
+	power_on();
 	timer1_init();
 	lcd_init();
 	button_init();
@@ -144,11 +165,15 @@ int main(void)
 
 	while (1) {
 		
+		// Cut power if idle threshold reached
+		if (idle_time > MAX_IDLE_TIME)
+			POWER_ON_PORT &= ~(1 << POWER_ON_PIN);
+
 		switch (program_state) {
-			
+
 			case ANALYZING:
 				oxygen = get_oxygen_level(adc_air_level, adc_filtered_result);
-			
+
 			case ANALYZING_HOLD:
 				lcd_display_oxygen(oxygen, (program_state == ANALYZING_HOLD));
 				
@@ -173,7 +198,7 @@ int main(void)
 				
 				if (button_pushed)
 					enable_button_interrupt();
-				
+
 				break;
 		}
 	}
