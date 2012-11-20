@@ -21,6 +21,10 @@
 #define POWER_ON_PORT     PORTC
 #define POWER_ON_DDR      DDRC
 
+#define BACKLIGHT_DDR     DDRB
+#define BACKLIGHT_PORT    PORTB
+#define BACKLIGHT_PIN     PB6
+
 #define MAX_IDLE_TIME     300 // in sec
 
 volatile unsigned long timer = 0;
@@ -195,6 +199,11 @@ void loop()
 	}
 }
 
+void init_backlight() {
+	BACKLIGHT_DDR |= (1 << BACKLIGHT_PIN);
+	BACKLIGHT_PORT |= (1 << BACKLIGHT_PIN);
+}
+
 int main(void)
 {
 	power_on();
@@ -202,6 +211,7 @@ int main(void)
 	lcd_init();
 	button_init();
 	adc_init();
+	init_backlight();
 
 	// Enable interrupts:
 	sei();
