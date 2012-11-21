@@ -103,18 +103,18 @@ inline void handle_button_release()
 }
 
 // Set up a 1 ms timer1.
-void timer1_init()
+static void timer1_init()
 {
 	TCCR1B |= (1 << WGM12);
 	// Target - 1000 Hz at 8 Mhz (8000000 / 8) / 1000 - 1
-	OCR1A   = 999;
+	OCR1A = 999;
 	// Start timer, prescaler 8
 	TCCR1B |= (1 << CS11);
 	// CTC interrupt:
 	TIMSK1 |= (1 << OCIE1A);
 }
 
-void button_init()
+static void button_init()
 {
 	// Button pin input
 	BUTTON_DDR |= (1 << BUTTON_PIN);
@@ -126,14 +126,21 @@ void button_init()
 	EIMSK |= (1 << BUTTON_INT);
 }
 
-void power_on()
+static void power_on()
 {
 	// Power control pin high.
 	POWER_ON_DDR |= (1 << POWER_ON_PIN);
 	POWER_ON_PORT |= (1 << POWER_ON_PIN);
 }
 
-void adc_init()
+static void backlight_init()
+{
+	// Turn on backlight
+	BACKLIGHT_DDR |= (1 << BACKLIGHT_PIN);
+	BACKLIGHT_PORT |= (1 << BACKLIGHT_PIN);
+}
+
+static void adc_init()
 {
 	// Slowest ADC Prescaler
 	ADCSRA |= (1 << ADPS2) | (1 << ADPS1) | (1 << ADPS0);
@@ -141,13 +148,6 @@ void adc_init()
 	ADMUX |= (1 << REFS0) | (1 << MUX0);
 	// Free running mode, enable adc, enable interrupt, go!
 	ADCSRA |= (1 << ADATE) | (1 << ADEN) | (1 << ADIE) | (1 << ADSC);
-}
-
-double get_oxygen_level(double air_level, double adc_level)
-{
-	// 20.9% oxygen = adc_air_level
-	double slope = air_level / 20.9;
-	return (slope > 0) ? (adc_level / slope) : 0;
 }
 
 void enable_button_interrupt()
@@ -159,7 +159,15 @@ void enable_button_interrupt()
 	idle_time = 0;
 }
 
-void loop()
+double get_oxygen_level(double air_level, double adc_level)
+{
+	// 20.9% oxygen = adc_air_level
+	double slope = air_level / 20.9;
+	return (slope > 0) ? (adc_level / slope) : 0;
+}
+
+
+static void loop()
 {	
 	// Cut power if idle threshold reached
 	if (idle_time > MAX_IDLE_TIME)
@@ -168,7 +176,7 @@ void loop()
 	switch (program_state) {
 
 		case ANALYZING:
-			oxygen = get_oxygen_level(adc_air_level, adc_filtered_result);
+			oxygen = get_oxygen_level(adc_air_level, adc_filtered_result);   /* FALLTHROUGH */
 
 		case ANALYZING_HOLD:
 			lcd_display_oxygen(oxygen, (program_state == ANALYZING_HOLD));
@@ -199,11 +207,6 @@ void loop()
 	}
 }
 
-void init_backlight() {
-	BACKLIGHT_DDR |= (1 << BACKLIGHT_PIN);
-	BACKLIGHT_PORT |= (1 << BACKLIGHT_PIN);
-}
-
 int main(void)
 {
 	power_on();
@@ -211,7 +214,7 @@ int main(void)
 	lcd_init();
 	button_init();
 	adc_init();
-	init_backlight();
+	backlight_init();
 
 	// Enable interrupts:
 	sei();
